@@ -1,0 +1,265 @@
+---
+title: "Huet_Munoz_pec2"
+author: "Miguel Ángel Huet Muñoz"
+output:
+  pdf_document:
+    toc: true
+toc-title: "Índice"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, include=FALSE}
+library(readxl)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(VIM)
+library(knitr)
+library(ggplot2)
+library(car)
+library(pROC)
+library(nnet)
+library(ggpubr)
+library(jsonlite)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggforce)
+library(UpSetR)
+```
+
+# 1. Small Multiple
+
+Cargamos el archivo que sacamos de aquí: https://www.kaggle.com/datasets/mohankrishnathalla/mobile-reviews-sentiment-and-specification
+
+```{r}
+df <- read.csv("Mobile_Reviews_Sentiment.csv", stringsAsFactors = TRUE, 
+                                 fileEncoding = "latin1")
+```
+
+```{r}
+# Convertir model en factor (para controlar el orden si quieres)
+df$model <- as.factor(df$model)
+
+# Agrupar por modelo y rating y contar ocurrencias
+rating_counts <- df %>%
+  group_by(model, rating) %>%
+  summarise(count = n(), .groups = "drop")
+
+# Gráfico small multiple de líneas
+ggplot(rating_counts, aes(x = factor(rating), y = count, group = model)) +
+  geom_line(color = "#0073C2FF", linewidth = 0.6) +
+  geom_point(color = "#0073C2FF", size = 1.5) +  # puntos opcionales para mayor claridad
+  facet_wrap(~ model, ncol = 4, scales = "free_y") +
+  labs(
+    title = "Distribución de Ratings por Modelo",
+    x = "Rating",
+    y = "Conteo"
+  ) +
+  theme_minimal(base_size = 1) +
+  theme(
+    strip.text = element_text(face = "bold", size = 10),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 8),
+    axis.title = element_text(angle = 0, hjust = 0.5, size = 8),
+    axis.text = element_text(angle = 0, hjust = 0.5, size = 8)
+  )
+# Histograma de precios por modelo
+ggplot(df, aes(x = price_usd)) +
+  geom_histogram(
+    bins = 15,            # número de rangos (puedes ajustar)
+    fill = "#0073C2FF",   # color tipo Tableau
+    color = "white"       # bordes blancos para estética
+  ) +
+  facet_wrap(~ model, ncol = 4, scales = "free_y") +
+  labs(
+    title = "Distribución de Precios por Modelo (USD)",
+    x = "Precio (USD)",
+    y = "Conteo"
+  ) +
+  theme_minimal(base_size = 1) +
+  theme(
+    strip.text = element_text(face = "bold", size = 10),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 8),
+    axis.title = element_text(angle = 0, hjust = 0.5, size = 8),
+    axis.text = element_text(angle = 0, hjust = 0.5, size = 8)
+  )
+
+```
+
+# 2. Flow Map
+
+Cargamos el archivo que sacamos de aquí: https://www.kaggle.com/datasets/jacekpardyak/openflights?select=airports.json
+
+```{r}
+# --- Cargar datos ---
+routes <- fromJSON("routes.json")
+
+# Filtrar rutas que salgan de aeropuertos españoles
+routes_es <- routes %>%
+  filter(grepl("Madrid", src))
+
+# --- Cargar mapa base de Europa ---
+world <- ne_countries(scale = "medium", returnclass = "sf")
+europe <- subset(world, subregion %in% c("Southern Europe", "Western Europe", "Northern Europe", "Eastern Europe"))
+
+# --- Crear puntos intermedios para arcos suaves ---
+routes_es <- routes_es %>%
+  rowwise() %>%
+  mutate(
+    mid_lat = (src_lat + dst_lat)/2 + 5,  # eleva el arco
+    mid_lon = (src_lon + dst_lon)/2
+  ) %>%
+  ungroup()
+
+# --- Preparar datos para geom_bezier ---
+routes_bezier <- routes_es %>%
+  rowwise() %>%
+  do(data.frame(
+    src = .$src,
+    dst = .$dst,
+    lon = c(.$src_lon, .$mid_lon, .$dst_lon),
+    lat = c(.$src_lat, .$mid_lat, .$dst_lat)
+  )) %>%
+  ungroup()
+
+# --- Graficar mapa con arcos suaves ---
+ggplot() +
+  geom_sf(data = europe, fill = "grey20", color = "white", size = 0.2) +
+  geom_bezier(
+    data = routes_bezier,
+    aes(x = lon, y = lat, group = interaction(src, dst)),
+    linewidth = 0.3,
+    color = "deepskyblue",
+    alpha = 0.4
+  ) +
+  coord_sf(xlim = c(-25, 35), ylim = c(25, 70)) +
+  theme_void() +
+  theme(
+    panel.background = element_rect(fill = "black", color = NA),
+    plot.background = element_rect(fill = "black", color = NA),
+    plot.title = element_text(color = "white", hjust = 0.5, size = 8, face = "bold")
+  ) +
+  ggtitle("Vuelos desde Madrid")
+
+
+
+# Filtrar rutas que salgan de aeropuertos españoles
+routes_fr <- routes %>%
+  filter(grepl("Paris", src))
+
+# --- Cargar mapa base de Europa ---
+world <- ne_countries(scale = "medium", returnclass = "sf")
+europe <- subset(world, subregion %in% c("Southern Europe", "Western Europe", "Northern Europe", "Eastern Europe"))
+
+# --- Crear puntos intermedios para arcos suaves ---
+routes_fr <- routes_fr %>%
+  rowwise() %>%
+  mutate(
+    mid_lat = (src_lat + dst_lat)/2 + 5,  # eleva el arco
+    mid_lon = (src_lon + dst_lon)/2
+  ) %>%
+  ungroup()
+
+# --- Preparar datos para geom_bezier ---
+routes_bezier <- routes_fr %>%
+  rowwise() %>%
+  do(data.frame(
+    src = .$src,
+    dst = .$dst,
+    lon = c(.$src_lon, .$mid_lon, .$dst_lon),
+    lat = c(.$src_lat, .$mid_lat, .$dst_lat)
+  )) %>%
+  ungroup()
+
+# --- Graficar mapa con arcos suaves ---
+ggplot() +
+  geom_sf(data = europe, fill = "grey20", color = "white", size = 0.2) +
+  geom_bezier(
+    data = routes_bezier,
+    aes(x = lon, y = lat, group = interaction(src, dst)),
+    linewidth = 0.3,
+    color = "deepskyblue",
+    alpha = 0.4
+  ) +
+  coord_sf(xlim = c(-25, 35), ylim = c(25, 70)) +
+  theme_void() +
+  theme(
+    panel.background = element_rect(fill = "black", color = NA),
+    plot.background = element_rect(fill = "black", color = NA),
+    plot.title = element_text(color = "white", hjust = 0.5, size = 8, face = "bold")
+  ) +
+  ggtitle("Vuelos desde Paris")
+``` 
+
+# 3. UpSet: Visualizing Intersecting Sets
+
+Cargamos el archivo que sacamos de aquí: https://www.kaggle.com/datasets/mohankrishnathalla/mobile-reviews-sentiment-and-specification
+
+```{r}
+df <- read.csv("Mobile_Reviews_Sentiment.csv", stringsAsFactors = TRUE, 
+                                 fileEncoding = "latin1")
+```
+
+```{r}
+# Lista de marcas que queremos graficar
+brands <- c("Google", "Apple", "Xiaomi", "Realme")
+
+plot_upset_by_brand <- function(brand_name, df) {
+  
+  # Filtrar datos de la marca
+  df_brand <- df %>% filter(brand == brand_name)
+  
+  if(nrow(df_brand) == 0){
+    message("No hay datos para la marca ", brand_name)
+    return(NULL)
+  }
+  
+  # Número total de reviews
+  n_reviews <- nrow(df_brand)
+  
+  # Crear variables lógicas (TRUE/FALSE) según rating >= 4
+  df_upset <- data.frame(
+    good_battery = df_brand$battery_life_rating >= 4,
+    good_camera = df_brand$camera_rating >= 4,
+    good_performance = df_brand$performance_rating >= 4,
+    good_design = df_brand$design_rating >= 4,
+    good_display = df_brand$display_rating >= 4
+  )
+  
+  # Convertir TRUE/FALSE a 1/0
+  df_upset_num <- as.data.frame(lapply(df_upset, function(x) as.numeric(x)))
+  
+  # Graficar UpSet
+  upset(
+    df_upset_num,
+    sets = c("good_battery", "good_camera", "good_performance", "good_design", "good_display"),
+    keep.order = TRUE,   # respeta el orden de sets
+    order.by = "freq",
+    main.bar.color = "#0073C2FF",
+    sets.bar.color = "#4DBBD5FF",
+    text.scale = c(1.5, 1.5, 1.2, 1.2, 1.2, 1.2),
+    mainbar.y.label = paste("Intersecciones para", brand_name),
+    sets.x.label = "Número de reviews buneas"
+  )
+}
+
+# Generar un gráfico por marca
+for(b in brands){
+  print(plot_upset_by_brand(b, df))
+  # Filtrar datos de la marca
+  df_brand <- df %>% filter(brand == b)
+  
+  if(nrow(df_brand) == 0){
+    message("No hay datos para la marca ", b)
+    return(NULL)
+  }
+  
+  # Número total de reviews
+  n_reviews <- nrow(df_brand)
+  print(paste("Número total de reviews para", b, ":", n_reviews))
+}
+
+```
